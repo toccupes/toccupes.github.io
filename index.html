@@ -1,4 +1,4 @@
-6<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -8,7 +8,7 @@
     <style>
         body {
             display: flex;
-            flex-direction: column;
+            flex-direction: column; 
             justify-content: center;
             align-items: center;
             height: 100vh;
@@ -42,7 +42,7 @@
         class ParametricTubeViewer {
             constructor(options = {}) {
                 const {
-                    baseScale = 50,
+                    baseScale = 80,
                     radius = 50,
                     steps = 1000,
                     segments = 80,
@@ -59,8 +59,7 @@
                     rotation: { x: 0, y: 0 },
                     scale: 0.5,
                     isInteracting: false,
-                    lastPos: { x: 0, y: 0 },
-                    pinchStartDistance: 0
+                    lastPos: { x: 0, y: 0 }
                 };
 
                 this.backgroundColor = backgroundColor;
@@ -172,7 +171,7 @@
                 switch(e.type) {
                     case 'mousedown':
                     case 'touchstart':
-                        this.startInteraction(pos, e);
+                        this.startInteraction(pos);
                         break;
                     case 'mousemove':
                     case 'touchmove':
@@ -187,14 +186,9 @@
                 }
             }
 
-            startInteraction(pos, e) {
+            startInteraction(pos) {
                 this.state.isInteracting = true;
                 this.state.lastPos = pos;
-                
-                // Handle touch zoom (pinch)
-                if (e.type === 'touchstart' && e.touches.length === 2) {
-                    this.state.pinchStartDistance = this.getPinchDistance(e);
-                }
             }
 
             updateInteraction(pos) {
@@ -203,19 +197,16 @@
                     this.state.rotation.x += (pos.y - this.state.lastPos.y) * 0.01;
                     this.state.lastPos = pos;
                 }
-
-                // Handle touch zoom (pinch)
-                if (this.state.pinchStartDistance > 0) {
-                    const pinchDistance = this.getPinchDistance(e);
-                    const zoomFactor = pinchDistance / this.state.pinchStartDistance;
-                    this.state.scale *= zoomFactor;
-                    this.state.pinchStartDistance = pinchDistance;
-                }
             }
 
             endInteraction() {
                 this.state.isInteracting = false;
-                this.state.pinchStartDistance = 0; // Reset pinch distance
+            }
+
+            handleZoom(e) {
+                e.preventDefault();
+                this.state.scale *= e.deltaY > 0 ? 0.9 : 1.1;
+                this.state.scale = Math.max(0.05, Math.min(this.state.scale, 50));
             }
 
             getEventPosition(e) {
@@ -224,18 +215,6 @@
                     x: touch ? touch.clientX : e.clientX,  // Handle touch event's clientX
                     y: touch ? touch.clientY : e.clientY   // Handle touch event's clientY
                 };
-            }
-
-            getPinchDistance(e) {
-                const touch1 = e.touches[0];
-                const touch2 = e.touches[1];
-                return Math.sqrt(Math.pow(touch2.clientX - touch1.clientX, 2) + Math.pow(touch2.clientY - touch1.clientY, 2));
-            }
-
-            handleZoom(e) {
-                e.preventDefault();
-                this.state.scale *= e.deltaY > 0 ? 0.9 : 1.1;
-                this.state.scale = Math.max(0.05, Math.min(this.state.scale, 50));
             }
 
             resizeCanvas() {
