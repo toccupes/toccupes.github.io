@@ -16,189 +16,269 @@
             font-family: Arial, sans-serif;
             background-color: #000000;
         }
+        .image-container {
+            max-width: 260px; 
+            margin-bottom: 20px;
+	}
+        .gif-container {
+            max-width: 300px; 
+            margin-top: 20px;
+        }
         .centered-text {
             font-size: 4rem;
             font-weight: bold;
             color: #f0f0f0;
             margin-top: 60px;
         }
-        canvas {
-            touch-action: pinch-zoom; /* Enable pinch-to-zoom */
-        }
     </style>
 </head>
 <body>
     <div class="centered-text">ALPAGT</div>
-    <script>
+   <script>
         (function () {
-            class ParametricTubeViewer {
-                constructor() {
-                    this.canvas = document.createElement('canvas');
-                    document.body.appendChild(this.canvas);
-                    this.ctx = this.canvas.getContext('2d');
+ 
+class ParametricTubeViewer {
+    constructor(options = {}) {
+        const {
+            baseScale = 80,
+            radius = 50,
+            steps = 1000,
+            segments = 80,
+            backgroundColor = '#000000',
+            tubeColor = '#ffffff'
+        } = options;
 
-                    // Initial parameters
-                    this.rotation = { x: 0, y: 0 };
-                    this.scale = 1; // Zoom level
-                    this.isInteracting = false;
-                    this.lastX = 0;
-                    this.lastY = 0;
+        this.canvas = document.createElement('canvas');
+        document.body.appendChild(this.canvas);
+        this.ctx = this.canvas.getContext('2d');
 
-                    // Generate the tube geometry
-                    this.tube = this.generateTube();
+        this.params = { baseScale, radius, steps, segments };
+        this.state = {
+            rotation: { x: 0, y: 0 },
+            scale: 1,
+            isInteracting: false,
+            lastPos: { x: 0, y: 0 }
+        };
 
-                    // Resize canvas and set up event listeners
-                    this.resizeCanvas();
-                    this.setupEventListeners();
-                    this.animate();
-                }
+        this.backgroundColor = backgroundColor;
+        this.tubeColor = tubeColor;
 
-                generateTube() {
-                    const tube = [];
-                    const baseScale = 80; // Match original scale
-                    const radius = 50;
-                    const steps = 1000; // Longitudinal resolution
-                    const segments = 80; // Cross-sectional resolution
+        this.tube = this.generateTube();
+        this.setupEventListeners();
+        this.resizeCanvas();
+        this.animate();
+    }
 
-                    for (let t = 0; t <= steps; t++) {
-                        const angle = (2 * Math.PI * t) / steps;
-                        const cx = baseScale * (Math.sin(angle) + 2 * Math.sin(2 * angle));
-                        const cy = baseScale * (Math.cos(angle) - 2 * Math.cos(2 * angle));
-                        const cz = baseScale * (-Math.sin(3 * angle));
+    // Memoized trigonometric function to reduce repeated calculations
+    static trigCache = new Map();
+    static memoizedTrig(fn, angle) {
+        const key = `${fn.name}-${angle}`;
+        if (!this.trigCache.has(key)) {
+            this.trigCache.set(key, fn(angle));
+        }
+        return this.trigCache.get(key);
+    }
 
-                        const tangent = {
-                            x: baseScale * (Math.cos(angle) + 4 * Math.cos(2 * angle)),
-                            y: baseScale * (-Math.sin(angle) + 4 * Math.sin(2 * angle)),
-                            z: baseScale * (-3 * Math.cos(3 * angle))
-                        };
-                        const tangentLength = Math.sqrt(tangent.x ** 2 + tangent.y ** 2 + tangent.z ** 2);
-                        tangent.x /= tangentLength;
-                        tangent.y /= tangentLength;
-                        tangent.z /= tangentLength;
+    generateTube() {
+        const { baseScale, radius, steps, segments } = this.params;
+        const tube = new Array(steps + 1);
 
-                        const up = { x: 0, y: 1, z: 0 };
-                        const normal = {
-                            x: up.y * tangent.z - up.z * tangent.y,
-                            y: up.z * tangent.x - up.x * tangent.z,
-                            z: up.x * tangent.y - up.y * tangent.x
-                        };
-                        const normalLength = Math.sqrt(normal.x ** 2 + normal.y ** 2 + normal.z ** 2);
-                        normal.x /= normalLength;
-                        normal.y /= normalLength;
-                        normal.z /= normalLength;
+        for (let t = 0; t <= steps; t++) {
+            const angle = (2 * Math.PI * t) / steps;
+            const cx = baseScale * (
+                Math.sin(angle) + 
+                2 * Math.sin(2 * angle)
+            );
+            const cy = baseScale * (
+                Math.cos(angle) - 
+                2 * Math.cos(2 * angle)
+            );
+            const cz = baseScale * (-Math.sin(3 * angle));
 
-                        const binormal = {
-                            x: tangent.y * normal.z - tangent.z * normal.y,
-                            y: tangent.z * normal.x - tangent.x * normal.z,
-                            z: tangent.x * normal.y - tangent.y * normal.x
-                        };
+            const tangent = this.computeTangent(angle, baseScale);
+            const { normal, binormal } = this.computeOrthogonalVectors(tangent);
 
-                        const ring = [];
-                        for (let i = 0; i < segments; i++) {
-                            const theta = (2 * Math.PI * i) / segments;
-                            const x = cx + radius * (Math.cos(theta) * normal.x + Math.sin(theta) * binormal.x);
-                            const y = cy + radius * (Math.cos(theta) * normal.y + Math.sin(theta) * binormal.y);
-                            const z = cz + radius * (Math.cos(theta) * normal.z + Math.sin(theta) * binormal.z);
-                            ring.push({ x, y, z });
-                        }
-                        tube.push(ring);
-                    }
-                    return tube;
-                }
+            tube[t] = new Array(segments);
+            for (let i = 0; i < segments; i++) {
+                const theta = (2 * Math.PI * i) / segments;
+                const cosTheta = Math.cos(theta);
+                const sinTheta = Math.sin(theta);
 
-                setupEventListeners() {
-                    window.addEventListener('resize', () => this.resizeCanvas());
-
-                    // Mouse interactions
-                    this.canvas.addEventListener('mousedown', this.startInteraction.bind(this));
-                    this.canvas.addEventListener('mousemove', this.updateInteraction.bind(this));
-                    this.canvas.addEventListener('mouseup', this.endInteraction.bind(this));
-                    this.canvas.addEventListener('mouseleave', this.endInteraction.bind(this));
-
-                    // Zoom with wheel
-                    this.canvas.addEventListener('wheel', (e) => {
-                        e.preventDefault();
-                        this.scale *= e.deltaY > 0 ? 0.9 : 1.1;
-                        this.scale = Math.max(0.05, Math.min(this.scale, 50)); // Limit zoom range
-                    });
-                }
-
-                resizeCanvas() {
-                    this.canvas.width = window.innerWidth;
-                    this.canvas.height = window.innerHeight;
-                }
-
-                startInteraction(e) {
-                    this.isInteracting = true;
-                    this.lastX = e.clientX;
-                    this.lastY = e.clientY;
-                }
-
-                updateInteraction(e) {
-                    if (this.isInteracting) {
-                        const dx = e.clientX - this.lastX;
-                        const dy = e.clientY - this.lastY;
-                        this.rotation.y += dx * 0.01;
-                        this.rotation.x += dy * 0.01;
-                        this.lastX = e.clientX;
-                        this.lastY = e.clientY;
-                    }
-                }
-
-                endInteraction() {
-                    this.isInteracting = false;
-                }
-
-                rotatePoint({ x, y, z }) {
-                    const cosY = Math.cos(this.rotation.y);
-                    const sinY = Math.sin(this.rotation.y);
-                    const cosX = Math.cos(this.rotation.x);
-                    const sinX = Math.sin(this.rotation.x);
-
-                    const tempX = cosY * x - sinY * z;
-                    const tempZ = sinY * x + cosY * z;
-                    const tempY = cosX * y - sinX * tempZ;
-                    z = sinX * y + cosX * tempZ;
-
-                    return { x: tempX, y: tempY, z };
-                }
-
-                project({ x, y, z }) {
-                    const perspective = 1000;
-                    const scale = (this.scale * perspective) / (z + perspective);
-                    return {
-                        x: x * scale + this.canvas.width / 2,
-                        y: y * scale + this.canvas.height / 2,
-                    };
-                }
-
-                animate() {
-                    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-
-                    this.ctx.strokeStyle = '#fff';
-                    this.ctx.lineWidth = 1;
-
-                    for (let i = 0; i < this.tube[0].length; i++) {
-                        this.ctx.beginPath();
-                        for (let j = 0; j < this.tube.length; j++) {
-                            const point = this.tube[j][i];
-                            const rotatedPoint = this.rotatePoint(point);
-                            const projectedPoint = this.project(rotatedPoint);
-                            if (j === 0) {
-                                this.ctx.moveTo(projectedPoint.x, projectedPoint.y);
-                            } else {
-                                this.ctx.lineTo(projectedPoint.x, projectedPoint.y);
-                            }
-                        }
-                        this.ctx.stroke();
-                    }
-
-                    requestAnimationFrame(() => this.animate());
-                }
+                tube[t][i] = {
+                    x: cx + radius * (cosTheta * normal.x + sinTheta * binormal.x),
+                    y: cy + radius * (cosTheta * normal.y + sinTheta * binormal.y),
+                    z: cz + radius * (cosTheta * normal.z + sinTheta * binormal.z)
+                };
             }
+        }
 
-            window.addEventListener('load', () => new ParametricTubeViewer());
+        return tube;
+    }
+
+    computeTangent(angle, baseScale) {
+        const tx = baseScale * (Math.cos(angle) + 4 * Math.cos(2 * angle));
+        const ty = baseScale * (-Math.sin(angle) + 4 * Math.sin(2 * angle));
+        const tz = baseScale * (-3 * Math.cos(3 * angle));
+        
+        const length = Math.hypot(tx, ty, tz);
+        return {
+            x: tx / length,
+            y: ty / length,
+            z: tz / length
+        };
+    }
+
+    computeOrthogonalVectors(tangent) {
+        const up = { x: 0, y: 1, z: 0 };
+        const normal = {
+            x: up.y * tangent.z - up.z * tangent.y,
+            y: up.z * tangent.x - up.x * tangent.z,
+            z: up.x * tangent.y - up.y * tangent.x
+        };
+
+        const normalLength = Math.hypot(normal.x, normal.y, normal.z);
+        normal.x /= normalLength;
+        normal.y /= normalLength;
+        normal.z /= normalLength;
+
+        const binormal = {
+            x: tangent.y * normal.z - tangent.z * normal.y,
+            y: tangent.z * normal.x - tangent.x * normal.z,
+            z: tangent.x * normal.y - tangent.y * normal.x
+        };
+
+        return { normal, binormal };
+    }
+
+    setupEventListeners() {
+        const events = ['mousedown', 'mousemove', 'mouseup', 'mouseleave', 
+                        'touchstart', 'touchmove', 'touchend', 'touchcancel'];
+        
+        events.forEach(eventType => {
+            this.canvas.addEventListener(eventType, this.handleEvent.bind(this), { passive: false });
+        });
+
+        window.addEventListener('resize', this.resizeCanvas.bind(this));
+        this.canvas.addEventListener('wheel', this.handleZoom.bind(this));
+    }
+
+    handleEvent(e) {
+        e.preventDefault();
+        const pos = this.getEventPosition(e);
+
+        switch(e.type) {
+            case 'mousedown':
+            case 'touchstart':
+                this.startInteraction(pos);
+                break;
+            case 'mousemove':
+            case 'touchmove':
+                this.updateInteraction(pos);
+                break;
+            case 'mouseup':
+            case 'touchend':
+            case 'mouseleave':
+            case 'touchcancel':
+                this.endInteraction();
+                break;
+        }
+    }
+
+    startInteraction(pos) {
+        this.state.isInteracting = true;
+        this.state.lastPos = pos;
+    }
+
+    updateInteraction(pos) {
+        if (this.state.isInteracting) {
+            this.state.rotation.y += (pos.x - this.state.lastPos.x) * 0.01;
+            this.state.rotation.x += (pos.y - this.state.lastPos.y) * 0.01;
+            this.state.lastPos = pos;
+        }
+    }
+
+    endInteraction() {
+        this.state.isInteracting = false;
+    }
+
+    handleZoom(e) {
+        e.preventDefault();
+        this.state.scale *= e.deltaY > 0 ? 0.9 : 1.1;
+        this.state.scale = Math.max(0.05, Math.min(this.state.scale, 50));
+    }
+
+    getEventPosition(e) {
+        const touch = e.touches && e.touches[0];
+        return {
+            x: touch ? touch.clientX : e.clientX,
+            y: touch ? touch.clientY : e.clientY
+        };
+    }
+
+    resizeCanvas() {
+        this.canvas.width = window.innerWidth;
+        this.canvas.height = window.innerHeight;
+    }
+
+    rotatePoint(point) {
+        const { x, y, z } = point;
+        const cosY = Math.cos(this.state.rotation.y);
+        const sinY = Math.sin(this.state.rotation.y);
+        const cosX = Math.cos(this.state.rotation.x);
+        const sinX = Math.sin(this.state.rotation.x);
+
+        const rotatedX = cosY * x - sinY * z;
+        const rotatedZ = sinY * x + cosY * z;
+        const rotatedY = cosX * y - sinX * rotatedZ;
+        const finalZ = sinX * y + cosX * rotatedZ;
+
+        return { x: rotatedX, y: rotatedY, z: finalZ };
+    }
+
+    project(point) {
+        const perspective = 1000;
+        const scale = (this.state.scale * perspective) / (point.z + perspective);
+        return {
+            x: point.x * scale + this.canvas.width / 2,
+            y: point.y * scale + this.canvas.height / 2
+        };
+    }
+
+    animate() {
+        this.ctx.fillStyle = this.backgroundColor;
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        this.ctx.strokeStyle = this.tubeColor;
+        this.ctx.lineWidth = 1;
+
+        for (let i = 0; i < this.tube[0].length; i++) {
+            this.ctx.beginPath();
+            for (let j = 0; j < this.tube.length; j++) {
+                const point = this.tube[j][i];
+                const rotatedPoint = this.rotatePoint(point);
+                const projectedPoint = this.project(rotatedPoint);
+                
+                j === 0 
+                    ? this.ctx.moveTo(projectedPoint.x, projectedPoint.y) 
+                    : this.ctx.lineTo(projectedPoint.x, projectedPoint.y);
+            }
+            this.ctx.stroke();
+        }
+
+        requestAnimationFrame(() => this.animate());
+    }
+}
+
+window.addEventListener('load', () => new ParametricTubeViewer({
+    baseScale: 80,
+    radius: 50,
+    steps: 1000,
+    segments: 80,
+    backgroundColor: '#000000',
+    tubeColor: '#ffffff'
+}));
+
         })();
     </script>
+    </div>
 </body>
 </html>
