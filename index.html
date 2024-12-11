@@ -8,7 +8,7 @@
     <style>
         body {
             display: flex;
-            flex-direction: column; 
+            flex-direction: column;
             justify-content: center;
             align-items: center;
             height: 100vh;
@@ -20,15 +20,12 @@
             font-size: 4rem;
             font-weight: bold;
             color: #f0f0f0;
-            margin-top: 100px;
-        }
-        canvas {
-            touch-action: pinch-zoom; /* Enable pinch-to-zoom */
+            margin-top: 60px;
         }
     </style>
 </head>
 <body>
-    <div class="centered-text">ALPAGT</div>
+    <div class="centered-text"><br>ALPAGT</div>
     <script>
         (function () {
             class ParametricTubeViewer {
@@ -37,17 +34,17 @@
                     document.body.appendChild(this.canvas);
                     this.ctx = this.canvas.getContext('2d');
 
-                    // Initial parameters
                     this.rotation = { x: 0, y: 0 };
-                    this.scale = 1; // Zoom level
+                    this.scale = 1;
                     this.isInteracting = false;
                     this.lastX = 0;
                     this.lastY = 0;
 
-                    // Generate the tube geometry
+                    this.touches = [];
+                    this.initialDistance = 0;
+
                     this.tube = this.generateTube();
 
-                    // Resize canvas and set up event listeners
                     this.resizeCanvas();
                     this.setupEventListeners();
                     this.animate();
@@ -55,10 +52,10 @@
 
                 generateTube() {
                     const tube = [];
-                    const baseScale = 60; // Match original scale
+                    const baseScale = 80;
                     const radius = 50;
-                    const steps = 1000; // Longitudinal resolution
-                    const segments = 80; // Cross-sectional resolution
+                    const steps = 1000;
+                    const segments = 80;
 
                     for (let t = 0; t <= steps; t++) {
                         const angle = (2 * Math.PI * t) / steps;
@@ -109,44 +106,56 @@
                 setupEventListeners() {
                     window.addEventListener('resize', () => this.resizeCanvas());
 
-                    // Mouse interactions
-                    this.canvas.addEventListener('mousedown', this.startInteraction.bind(this));
-                    this.canvas.addEventListener('mousemove', this.updateInteraction.bind(this));
-                    this.canvas.addEventListener('mouseup', this.endInteraction.bind(this));
-                    this.canvas.addEventListener('mouseleave', this.endInteraction.bind(this));
-
-                    // Zoom with wheel
-                    this.canvas.addEventListener('wheel', (e) => {
-                        e.preventDefault();
-                        this.scale *= e.deltaY > 0 ? 0.9 : 1.1;
-                        this.scale = Math.max(0.05, Math.min(this.scale, 50)); // Limit zoom range
-                    });
+                    this.canvas.addEventListener('touchstart', (e) => this.startInteraction(e), { passive: false });
+                    this.canvas.addEventListener('touchmove', (e) => this.updateInteraction(e), { passive: false });
+                    this.canvas.addEventListener('touchend', () => this.endInteraction());
+                    this.canvas.addEventListener('touchcancel', () => this.endInteraction());
                 }
 
                 resizeCanvas() {
-                    this.canvas.width = window.innerWidth*1;
-                    this.canvas.height = window.innerHeight*1;
+                    this.canvas.width = window.innerWidth;
+                    this.canvas.height = window.innerHeight;
                 }
 
                 startInteraction(e) {
-                    this.isInteracting = true;
-                    this.lastX = e.clientX;
-                    this.lastY = e.clientY;
+                    e.preventDefault();
+                    if (e.touches.length === 2) {
+                        this.touches = Array.from(e.touches);
+                        this.initialDistance = this.getTouchDistance();
+                    } else if (e.touches.length === 1) {
+                        this.isInteracting = true;
+                        this.lastX = e.touches[0].clientX;
+                        this.lastY = e.touches[0].clientY;
+                    }
                 }
 
                 updateInteraction(e) {
-                    if (this.isInteracting) {
-                        const dx = e.clientX - this.lastX;
-                        const dy = e.clientY - this.lastY;
-                        this.rotation.y += dx * 0.01;
-                        this.rotation.x += dy * 0.01;
-                        this.lastX = e.clientX;
-                        this.lastY = e.clientY;
+                    e.preventDefault();
+                    if (e.touches.length === 2) {
+                        const newDistance = this.getTouchDistance(e.touches);
+                        this.scale *= newDistance / this.initialDistance;
+                        this.scale = Math.max(0.1, Math.min(this.scale, 10));
+                        this.initialDistance = newDistance;
+                    } else if (this.isInteracting && e.touches.length === 1) {
+                        const clientX = e.touches[0].clientX;
+                        const clientY = e.touches[0].clientY;
+                        this.rotation.y += (clientX - this.lastX) * 0.01;
+                        this.rotation.x += (clientY - this.lastY) * 0.01;
+                        this.lastX = clientX;
+                        this.lastY = clientY;
                     }
                 }
 
                 endInteraction() {
                     this.isInteracting = false;
+                    this.touches = [];
+                }
+
+                getTouchDistance(touches = this.touches) {
+                    const [touch1, touch2] = touches;
+                    const dx = touch1.clientX - touch2.clientX;
+                    const dy = touch1.clientY - touch2.clientY;
+                    return Math.sqrt(dx ** 2 + dy ** 2);
                 }
 
                 rotatePoint({ x, y, z }) {
