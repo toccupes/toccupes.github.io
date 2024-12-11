@@ -153,17 +153,57 @@
                 return { normal, binormal };
             }
 
-            setupEventListeners() {
-                const events = ['mousedown', 'mousemove', 'mouseup', 'mouseleave', 
-                                'touchstart', 'touchmove', 'touchend', 'touchcancel'];
-                
-                events.forEach(eventType => {
-                    this.canvas.addEventListener(eventType, this.handleEvent.bind(this), { passive: false });
-                });
+setupEventListeners() {
+    const events = [
+        'mousedown', 'mousemove', 'mouseup', 'mouseleave', 
+        'touchstart', 'touchmove', 'touchend', 'touchcancel'
+    ];
 
-                window.addEventListener('resize', this.resizeCanvas.bind(this));
-                this.canvas.addEventListener('wheel', this.handleZoom.bind(this));
-            }
+    events.forEach(eventType => {
+        this.canvas.addEventListener(eventType, this.handleEvent.bind(this), { passive: false });
+    });
+
+    // Add touch-specific event listeners for pinch-to-zoom
+    this.canvas.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: false });
+    this.canvas.addEventListener('touchmove', this.handleTouchMove.bind(this), { passive: false });
+    this.canvas.addEventListener('touchend', this.handleTouchEnd.bind(this), { passive: false });
+
+    window.addEventListener('resize', this.resizeCanvas.bind(this));
+    this.canvas.addEventListener('wheel', this.handleZoom.bind(this));  // Zoom with mouse wheel
+}
+
+handleTouchStart(e) {
+    if (e.touches.length === 2) {
+        // Calculate the initial distance between the two fingers
+        this.state.pinchStartDistance = this.getDistanceBetweenTouches(e.touches);
+    }
+}
+
+handleTouchMove(e) {
+    if (e.touches.length === 2) {
+        const pinchCurrentDistance = this.getDistanceBetweenTouches(e.touches);
+        const zoomFactor = pinchCurrentDistance / this.state.pinchStartDistance;
+        this.state.scale *= zoomFactor;
+        this.state.scale = Math.max(0.05, Math.min(this.state.scale, 50));
+
+        // Update pinch start distance for next touchmove event
+        this.state.pinchStartDistance = pinchCurrentDistance;
+    }
+}
+
+handleTouchEnd(e) {
+    // Reset the pinch start distance when touch ends
+    if (e.touches.length < 2) {
+        this.state.pinchStartDistance = 0;
+    }
+}
+
+getDistanceBetweenTouches(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+
 
             handleEvent(e) {
                 e.preventDefault(); // Prevent default behavior (e.g., scrolling)
