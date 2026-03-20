@@ -18,14 +18,6 @@
             font-family: Arial, sans-serif;
             background-color: #000000;
         }
-        .image-container {
-            max-width: 260px; 
-            margin-bottom: 20px;
-        }
-        .gif-container {
-            max-width: 300px; 
-            margin-top: 20px;
-        }
         .centered-text {
             font-size: 4rem;
             font-weight: bold;
@@ -70,16 +62,6 @@
                 this.setupEventListeners();
                 this.resizeCanvas();
                 this.animate();
-            }
-
-            // Memoized trigonometric function to reduce repeated calculations
-            static trigCache = new Map();
-            static memoizedTrig(fn, angle) {
-                const key = `${fn.name}-${angle}`;
-                if (!this.trigCache.has(key)) {
-                    this.trigCache.set(key, fn(angle));
-                }
-                return this.trigCache.get(key);
             }
 
             generateTube() {
@@ -155,7 +137,7 @@
 
 setupEventListeners() {
     const events = [
-        'mousedown', 'mousemove', 'mouseup', 'mouseleave', 
+        'mousedown', 'mousemove', 'mouseup', 'mouseleave',
         'touchstart', 'touchmove', 'touchend', 'touchcancel'
     ];
 
@@ -163,47 +145,9 @@ setupEventListeners() {
         this.canvas.addEventListener(eventType, this.handleEvent.bind(this), { passive: false });
     });
 
-    // Add touch-specific event listeners for pinch-to-zoom
-    this.canvas.addEventListener('touchstart', this.handleTouchStart.bind(this), { passive: false });
-    this.canvas.addEventListener('touchmove', this.handleTouchMove.bind(this), { passive: false });
-    this.canvas.addEventListener('touchend', this.handleTouchEnd.bind(this), { passive: false });
-
     window.addEventListener('resize', this.resizeCanvas.bind(this));
-    this.canvas.addEventListener('wheel', this.handleZoom.bind(this));  // Zoom with mouse wheel
+    this.canvas.addEventListener('wheel', this.handleZoom.bind(this));
 }
-
-handleTouchStart(e) {
-    if (e.touches.length === 2) {
-        // Calculate the initial distance between the two fingers
-        this.state.pinchStartDistance = this.getDistanceBetweenTouches(e.touches);
-    }
-}
-
-handleTouchMove(e) {
-    if (e.touches.length === 2) {
-        const pinchCurrentDistance = this.getDistanceBetweenTouches(e.touches);
-        const zoomFactor = pinchCurrentDistance / this.state.pinchStartDistance;
-        this.state.scale *= zoomFactor;
-        this.state.scale = Math.max(0.05, Math.min(this.state.scale, 50));
-
-        // Update pinch start distance for next touchmove event
-        this.state.pinchStartDistance = pinchCurrentDistance;
-    }
-}
-
-handleTouchEnd(e) {
-    // Reset the pinch start distance when touch ends
-    if (e.touches.length < 2) {
-        this.state.pinchStartDistance = 0;
-    }
-}
-
-getDistanceBetweenTouches(touches) {
-    const dx = touches[0].clientX - touches[1].clientX;
-    const dy = touches[0].clientY - touches[1].clientY;
-    return Math.sqrt(dx * dx + dy * dy);
-}
-
 
             handleEvent(e) {
                 e.preventDefault(); // Prevent default behavior (e.g., scrolling)
@@ -216,7 +160,7 @@ getDistanceBetweenTouches(touches) {
                         break;
                     case 'mousemove':
                     case 'touchmove':
-                        this.updateInteraction(pos);
+                        this.updateInteraction(pos, e);
                         break;
                     case 'mouseup':
                     case 'touchend':
@@ -237,19 +181,16 @@ getDistanceBetweenTouches(touches) {
                 }
             }
 
-            updateInteraction(pos) {
-                if (this.state.isInteracting) {
+            updateInteraction(pos, e) {
+                if (e.touches?.length === 2 && this.state.pinchStartDistance > 0) {
+                    const pinchDistance = this.getPinchDistance(e);
+                    const zoomFactor = pinchDistance / this.state.pinchStartDistance;
+                    this.state.scale = Math.max(0.05, Math.min(this.state.scale * zoomFactor, 50));
+                    this.state.pinchStartDistance = pinchDistance;
+                } else if (this.state.isInteracting) {
                     this.state.rotation.y += (pos.x - this.state.lastPos.x) * 0.01;
                     this.state.rotation.x += (pos.y - this.state.lastPos.y) * 0.01;
                     this.state.lastPos = pos;
-                }
-
-                // Handle touch zoom (pinch)
-                if (this.state.pinchStartDistance > 0) {
-                    const pinchDistance = this.getPinchDistance(e);
-                    const zoomFactor = pinchDistance / this.state.pinchStartDistance;
-                    this.state.scale *= zoomFactor;
-                    this.state.pinchStartDistance = pinchDistance;
                 }
             }
 
@@ -267,9 +208,7 @@ getDistanceBetweenTouches(touches) {
             }
 
             getPinchDistance(e) {
-                const touch1 = e.touches[0];
-                const touch2 = e.touches[1];
-                return Math.sqrt(Math.pow(touch2.clientX - touch1.clientX, 2) + Math.pow(touch2.clientY - touch1.clientY, 2));
+                return Math.hypot(e.touches[1].clientX - e.touches[0].clientX, e.touches[1].clientY - e.touches[0].clientY);
             }
 
             handleZoom(e) {
